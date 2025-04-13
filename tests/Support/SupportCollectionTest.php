@@ -2146,6 +2146,24 @@ class SupportCollectionTest extends TestCase
     }
 
     #[DataProvider('collectionClassProvider')]
+    public function testChunkPreservingKeys($collection)
+    {
+        $data = new $collection(['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4, 'e' => 5]);
+
+        $this->assertEquals(
+            [['a' => 1, 'b' => 2], ['c' => 3, 'd' => 4], ['e' => 5]],
+            $data->chunk(2)->toArray()
+        );
+
+        $data = new $collection([1, 2, 3, 4, 5]);
+
+        $this->assertEquals(
+            [[0 => 1, 1 => 2], [0 => 3, 1 => 4], [0 => 5]],
+            $data->chunk(2, false)->toArray()
+        );
+    }
+
+    #[DataProvider('collectionClassProvider')]
     public function testSplitIn($collection)
     {
         $data = new $collection([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -2189,6 +2207,21 @@ class SupportCollectionTest extends TestCase
         $this->assertEquals([2 => 9, 3 => 10, 4 => 11, 5 => 12], $data->get(2)->toArray());
         $this->assertEquals([6 => 15, 7 => 16], $data->get(3)->toArray());
         $this->assertEquals([8 => 19, 9 => 20, 10 => 21], $data->last()->toArray());
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testChunkWhilePreservingStringKeys($collection)
+    {
+        $data = (new $collection(['a' => 1, 'b' => 1, 'c' => 2, 'd' => 2, 'e' => 3, 'f' => 3, 'g' => 3]))
+            ->chunkWhile(function ($current, $key, $chunk) {
+                return $chunk->last() === $current;
+            });
+
+        $this->assertInstanceOf($collection, $data);
+        $this->assertInstanceOf($collection, $data->first());
+        $this->assertEquals(['a' => 1, 'b' => 1], $data->first()->toArray());
+        $this->assertEquals(['c' => 2, 'd' => 2], $data->get(1)->toArray());
+        $this->assertEquals(['e' => 3, 'f' => 3, 'g' => 3], $data->last()->toArray());
     }
 
     #[DataProvider('collectionClassProvider')]
@@ -2353,9 +2386,11 @@ class SupportCollectionTest extends TestCase
     #[DataProvider('collectionClassProvider')]
     public function testImplodeModels($collection)
     {
-        $model = new class extends Model {};
+        $model = new class extends Model {
+        };
         $model->setAttribute('email', 'foo');
-        $modelTwo = new class extends Model {};
+        $modelTwo = new class extends Model {
+        };
         $modelTwo->setAttribute('email', 'bar');
         $data = new $collection([$model, $modelTwo]);
 
@@ -2792,6 +2827,35 @@ class SupportCollectionTest extends TestCase
             [-2, -3, -4],
             $collection::range(-2, -4)->all()
         );
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testFromJson($collection)
+    {
+        $json = json_encode($array = ['foo' => 'bar', 'baz' => 'quz']);
+
+        $instance = $collection::fromJson($json);
+
+        $this->assertSame($array, $instance->toArray());
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testFromJsonWithDepth($collection)
+    {
+        $json = json_encode(['foo' => ['baz' => ['quz']], 'bar' => 'baz']);
+
+        $instance = $collection::fromJson($json, 1);
+
+        $this->assertEmpty($instance->toArray());
+        $this->assertSame(JSON_ERROR_DEPTH, json_last_error());
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testFromJsonWithFlags($collection)
+    {
+        $instance = $collection::fromJson('{"int":99999999999999999999999}', 512, JSON_BIGINT_AS_STRING);
+
+        $this->assertSame(['int' => '99999999999999999999999'], $instance->toArray());
     }
 
     #[DataProvider('collectionClassProvider')]

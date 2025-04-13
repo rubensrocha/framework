@@ -33,6 +33,7 @@ use JsonSerializable;
 use Mockery as m;
 use OutOfBoundsException;
 use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -530,11 +531,12 @@ class HttpClientTest extends TestCase
         });
     }
 
-    public function testCanSendArrayableFormData()
+    #[DataProvider('methodsReceivingArrayableDataProvider')]
+    public function testCanSendArrayableFormData(string $method)
     {
         $this->factory->fake();
 
-        $this->factory->asForm()->post('http://foo.com/form', new Fluent([
+        $this->factory->asForm()->{$method}('http://foo.com/form', new Fluent([
             'name' => 'Taylor',
             'title' => 'Laravel Developer',
         ]));
@@ -546,11 +548,12 @@ class HttpClientTest extends TestCase
         });
     }
 
-    public function testCanSendJsonSerializableData()
+    #[DataProvider('methodsReceivingArrayableDataProvider')]
+    public function testCanSendJsonSerializableData(string $method)
     {
         $this->factory->fake();
 
-        $this->factory->asJson()->post('http://foo.com/form', new class implements JsonSerializable
+        $this->factory->asJson()->{$method}('http://foo.com/form', new class implements JsonSerializable
         {
             public function jsonSerialize(): mixed
             {
@@ -568,11 +571,12 @@ class HttpClientTest extends TestCase
         });
     }
 
-    public function testPrefersJsonSerializableOverArrayableData()
+    #[DataProvider('methodsReceivingArrayableDataProvider')]
+    public function testPrefersJsonSerializableOverArrayableData(string $method)
     {
         $this->factory->fake();
 
-        $this->factory->asJson()->post('http://foo.com/form', new class implements JsonSerializable, Arrayable
+        $this->factory->asJson()->{$method}('http://foo.com/form', new class implements JsonSerializable, Arrayable
         {
             public function jsonSerialize(): mixed
             {
@@ -2330,6 +2334,22 @@ class HttpClientTest extends TestCase
         $this->factory->assertSentCount(1);
     }
 
+    public function testExceptionThrowInMiddlewareAllowsRetry()
+    {
+        $middleware = Middleware::mapRequest(function (RequestInterface $request) {
+            throw new RuntimeException;
+        });
+
+        $this->expectException(RuntimeException::class);
+
+        $this->factory->fake(function (Request $request) {
+            return $this->factory->response('Fake');
+        })->withMiddleware($middleware)
+            ->retry(3, 1, function (Exception $exception, PendingRequest $request) {
+                return true;
+            })->post('https://example.com');
+    }
+
     public function testRequestsWillBeWaitingSleepMillisecondsReceivedInBackoffArray()
     {
         Sleep::fake();
@@ -2356,6 +2376,16 @@ class HttpClientTest extends TestCase
             Sleep::usleep(100_000),
             Sleep::usleep(200_000),
         ]);
+    }
+
+    public function testFailedRequest()
+    {
+        $requestException = $this->factory->failedRequest(['code' => 'not_found'], 404, ['X-RateLimit-Remaining' => 199]);
+
+        $this->assertInstanceOf(RequestException::class, $requestException);
+        $this->assertEqualsCanonicalizing(['code' => 'not_found'], $requestException->response->json());
+        $this->assertEquals(404, $requestException->response->status());
+        $this->assertEquals(199, $requestException->response->header('X-RateLimit-Remaining'));
     }
 
     public function testFakeConnectionException()
@@ -3471,6 +3501,16 @@ class HttpClientTest extends TestCase
         $factory = new Factory();
 
         $this->assertInstanceOf(PendingRequest::class, $factory->createPendingRequest());
+    }
+
+    public static function methodsReceivingArrayableDataProvider()
+    {
+        return [
+            'patch' => ['patch'],
+            'put' => ['put'],
+            'post' => ['post'],
+            'delete' => ['delete'],
+        ];
     }
 }
 

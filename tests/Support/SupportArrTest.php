@@ -6,6 +6,8 @@ use ArrayObject;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\ItemNotFoundException;
+use Illuminate\Support\MultipleItemsFoundException;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use stdClass;
@@ -1067,6 +1069,35 @@ class SupportArrTest extends TestCase
         $this->assertEquals($input, $shuffled);
     }
 
+    public function testSoleReturnsFirstItemInCollectionIfOnlyOneExists()
+    {
+        $this->assertSame('foo', Arr::sole(['foo']));
+
+        $array = [
+            ['name' => 'foo'],
+            ['name' => 'bar'],
+        ];
+
+        $this->assertSame(
+            ['name' => 'foo'],
+            Arr::sole($array, fn (array $value) => $value['name'] === 'foo')
+        );
+    }
+
+    public function testSoleThrowsExceptionIfNoItemsExist()
+    {
+        $this->expectException(ItemNotFoundException::class);
+
+        Arr::sole(['foo'], fn (string $value) => $value === 'baz');
+    }
+
+    public function testSoleThrowsExceptionIfMoreThanOneItemExists()
+    {
+        $this->expectExceptionObject(new MultipleItemsFoundException(2));
+
+        Arr::sole(['baz', 'foo', 'baz'], fn (string $value) => $value === 'baz');
+    }
+
     public function testEmptyShuffle()
     {
         $this->assertEquals([], Arr::shuffle([]));
@@ -1560,5 +1591,14 @@ class SupportArrTest extends TestCase
             'a' => 1,
             'b' => 2,
         ], $result);
+    }
+
+    public function testPartition()
+    {
+        $array = ['John', 'Jane', 'Greg'];
+
+        $result = Arr::partition($array, fn (string $value) => str_contains($value, 'J'));
+
+        $this->assertEquals([[0 => 'John', 1 => 'Jane'], [2 => 'Greg']], $result);
     }
 }
